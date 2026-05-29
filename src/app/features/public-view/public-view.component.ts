@@ -1,21 +1,21 @@
 import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
-import { GradingListService } from '../../core/firestore/grading-list.service';
+import { Firestore, collection, collectionData } from '@angular/fire/firestore';
+import { AuthService } from '../../core/auth/auth.service';
 import { GradingList } from '../../core/models';
+import { filter, switchMap } from 'rxjs';
 
 @Component({
   selector: 'app-public-view',
   standalone: true,
   imports: [CommonModule, RouterModule],
   template: `
-<div class="page">
-  <header class="page-header">
-    <a routerLink="/lists" class="back-link">← Înapoi</a>
-    <h1>🌍 Liste publice</h1>
-  </header>
+<div>
+  <h2 class="section-title">🌍 Liste publice</h2>
 
-  <div *ngIf="lists.length === 0 && !loading" class="empty-state">
+  <div *ngIf="loading" class="empty-state"><p>Se încarcă...</p></div>
+  <div *ngIf="!loading && lists.length === 0" class="empty-state">
     <p>Nicio listă publică momentan.</p>
   </div>
 
@@ -29,23 +29,20 @@ import { GradingList } from '../../core/models';
         <span class="author">de {{ list.userEmail }}</span>
       </div>
       <div class="criteria-tags">
-        <span *ngFor="let c of list.criteria" class="tag">{{ c.name }} {{ c.weight }}%</span>
+        <span *ngFor="let c of (list.criteria || [])" class="tag">{{ c.name }} {{ c.weight }}%</span>
       </div>
-      <div class="podium" *ngIf="list.items.length > 0">
+      <div class="podium" *ngIf="(list.items || []).length > 0">
         <span *ngFor="let item of topItems(list); let i = index" class="podium-item">
           {{ ['🥇','🥈','🥉'][i] }} {{ item.name }} — <strong>{{ item.overallScore | number:'1.1-2' }}</strong>
         </span>
       </div>
+      <div *ngIf="(list.items || []).length === 0" class="no-items">Niciun element evaluat încă</div>
     </div>
   </div>
 </div>
   `,
   styles: [`
-.page { max-width: 700px; margin: 0 auto; padding: 1.5rem; }
-.page-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; }
-.page-header h1 { font-size: 1.3rem; font-weight: 500; }
-.back-link { font-size: 13px; color: var(--color-text-secondary); text-decoration: none; }
-.back-link:hover { color: var(--color-text-primary); }
+.section-title { font-size: 15px; font-weight: 500; margin-bottom: 1rem; color: var(--color-text-secondary); }
 .lists-stack { display: flex; flex-direction: column; gap: 10px; }
 .public-card { background: var(--color-background-primary); border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-lg); padding: 1.25rem; cursor: pointer; transition: border-color 0.15s; }
 .public-card:hover { border-color: #1D9E75; }
@@ -57,22 +54,42 @@ import { GradingList } from '../../core/models';
 .tag { font-size: 11px; background: var(--color-background-secondary); border-radius: 20px; padding: 2px 10px; color: var(--color-text-secondary); }
 .podium { display: flex; gap: 12px; flex-wrap: wrap; border-top: 0.5px solid var(--color-border-tertiary); padding-top: 10px; font-size: 13px; }
 .podium-item strong { color: #1D9E75; }
+.no-items { font-size: 12px; color: var(--color-text-secondary); border-top: 0.5px solid var(--color-border-tertiary); padding-top: 10px; }
 .empty-state { text-align: center; padding: 3rem; color: var(--color-text-secondary); }
   `]
 })
 export class PublicViewComponent implements OnInit {
-  private service = inject(GradingListService);
+  private firestore = inject(Firestore);
+  private auth = inject(AuthService);
+
   lists: GradingList[] = [];
   loading = true;
 
   ngOnInit() {
-    this.service.getPublicLists().subscribe(lists => {
-      this.lists = lists;
-      this.loading = false;
+    // Apelăm collectionData în injection context (în constructor/ngOnInit cu inject())
+    const publicRef = collection(this.firestore, 'publicLists');
+
+    this.auth.user$.pipe(
+      filter(user => user !== null && user !== undefined),
+      switchMap(() => collectionData(publicRef, { idField: 'id' }))
+    ).subscribe({
+      next: (lists: any[]) => {
+        // Normalizează datele — items și criteria pot lipsi în documente vechi
+        this.lists = lists.map(l => ({
+          ...l,
+          items: l.items ?? [],
+          criteria: l.criteria ?? [],
+        }));
+        this.loading = false;
+      },
+      error: err => {
+        console.error('Public lists error:', err);
+        this.loading = false;
+      }
     });
   }
 
   topItems(list: GradingList) {
-    return [...list.items].sort((a, b) => b.overallScore - a.overallScore).slice(0, 3);
+    return [...(list.items || [])].sort((a, b) => b.overallScore - a.overallScore).slice(0, 3);
   }
 }

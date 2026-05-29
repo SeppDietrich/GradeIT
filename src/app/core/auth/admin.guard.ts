@@ -3,17 +3,16 @@ import { Router } from '@angular/router';
 import { filter, map, take } from 'rxjs';
 import { AuthService } from './auth.service';
 
-export const authGuard = () => {
+export const adminGuard = () => {
   const auth = inject(AuthService);
   const router = inject(Router);
 
-  // Așteaptă până Firebase confirmă starea autentificării
-  return auth.user$.pipe(
-    filter(user => user !== undefined),
+  return auth.appUser$.pipe(
+    filter(user => user !== null),
     take(1),
     map(user => {
-      if (user) return true;
-      return router.createUrlTree(['/']);
+      if (user?.role === 'admin') return true;
+      return router.createUrlTree(['/lists']);
     })
   );
 };

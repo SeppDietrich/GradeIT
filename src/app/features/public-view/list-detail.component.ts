@@ -9,10 +9,10 @@ import { GradingList } from '../../core/models';
   standalone: true,
   imports: [CommonModule, RouterModule],
   template: `
-<div class="page">
-  <header class="page-header">
-    <a routerLink="/explore" class="back-link">← Înapoi la liste publice</a>
-  </header>
+<div>
+  <a routerLink="/explore" class="back-link">← Înapoi la liste publice</a>
+
+  <div *ngIf="!list" class="loading">Se încarcă...</div>
 
   <div *ngIf="list" class="detail-content">
     <div class="list-title">
@@ -25,18 +25,23 @@ import { GradingList } from '../../core/models';
     <div class="criteria-section">
       <h2>Criterii</h2>
       <div class="criteria-pills">
-        <span *ngFor="let c of list.criteria" class="pill">{{ c.name }} <strong>{{ c.weight }}%</strong></span>
+        <span *ngFor="let c of (list.criteria || [])" class="pill">
+          {{ c.name }} <strong>{{ c.weight }}%</strong>
+        </span>
       </div>
     </div>
 
     <div class="items-section">
       <h2>Clasament</h2>
-      <table class="items-table">
+      <div *ngIf="(list.items || []).length === 0" class="empty">
+        Niciun element evaluat încă.
+      </div>
+      <table class="items-table" *ngIf="(list.items || []).length > 0">
         <thead>
           <tr>
             <th>#</th>
             <th>Nume</th>
-            <th *ngFor="let c of list.criteria">{{ c.name }}</th>
+            <th *ngFor="let c of (list.criteria || [])">{{ c.name }}</th>
             <th>Overall</th>
           </tr>
         </thead>
@@ -44,7 +49,7 @@ import { GradingList } from '../../core/models';
           <tr *ngFor="let item of sortedItems(); let i = index">
             <td class="rank">{{ i + 1 }}</td>
             <td class="item-name">{{ item.name }}</td>
-            <td *ngFor="let c of list.criteria">
+            <td *ngFor="let c of (list.criteria || [])">
               <span class="score-chip" [class]="scoreClass(getScore(item, c.id))">
                 {{ getScore(item, c.id) }}
               </span>
@@ -55,21 +60,17 @@ import { GradingList } from '../../core/models';
       </table>
     </div>
   </div>
-
-  <div *ngIf="!list" class="loading">Se încarcă...</div>
 </div>
   `,
   styles: [`
-.page { max-width: 800px; margin: 0 auto; padding: 1.5rem; }
-.page-header { margin-bottom: 1.5rem; }
-.back-link { font-size: 13px; color: var(--color-text-secondary); text-decoration: none; }
+.back-link { font-size: 13px; color: var(--color-text-secondary); text-decoration: none; display: inline-block; margin-bottom: 1.5rem; }
 .back-link:hover { color: var(--color-text-primary); }
 .list-title { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
 .emoji { font-size: 2rem; }
 h1 { font-size: 1.5rem; font-weight: 500; }
 .author { font-size: 13px; color: var(--color-text-secondary); margin-bottom: 8px; }
 .description { font-size: 14px; color: var(--color-text-secondary); margin-bottom: 1.5rem; }
-h2 { font-size: 14px; font-weight: 500; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; margin-top: 1.5rem; }
+h2 { font-size: 13px; font-weight: 500; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; margin-top: 1.5rem; }
 .criteria-pills { display: flex; flex-wrap: wrap; gap: 8px; }
 .pill { font-size: 13px; background: var(--color-background-secondary); border-radius: 20px; padding: 4px 12px; }
 .items-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 0.5rem; }
@@ -84,6 +85,7 @@ h2 { font-size: 14px; font-weight: 500; color: var(--color-text-secondary); text
 .color-high { color: #1D9E75; }
 .color-mid { color: #BA7517; }
 .color-low { color: #E24B4A; }
+.empty { font-size: 13px; color: var(--color-text-secondary); padding: 1rem 0; }
 .loading { text-align: center; padding: 3rem; color: var(--color-text-secondary); }
   `]
 })
@@ -94,19 +96,25 @@ export class ListDetailComponent implements OnInit {
 
   ngOnInit() {
     const id = this.route.snapshot.paramMap.get('id')!;
+    // inject() folosit în ngOnInit prin câmpurile injectate în constructor — corect
     const ref = doc(this.firestore, `publicLists/${id}`);
-    (docData(ref, { idField: 'id' }) as any).subscribe((list: GradingList) => {
-      this.list = list;
+    (docData(ref, { idField: 'id' }) as any).subscribe((data: any) => {
+      if (data) {
+        this.list = {
+          ...data,
+          items: data.items ?? [],
+          criteria: data.criteria ?? [],
+        };
+      }
     });
   }
 
   sortedItems() {
-    if (!this.list) return [];
-    return [...this.list.items].sort((a, b) => b.overallScore - a.overallScore);
+    return [...(this.list?.items || [])].sort((a, b) => b.overallScore - a.overallScore);
   }
 
   getScore(item: any, criterionId: string): number {
-    return item.scores.find((s: any) => s.criterionId === criterionId)?.score ?? 0;
+    return (item.scores || []).find((s: any) => s.criterionId === criterionId)?.score ?? 0;
   }
 
   scoreClass(s: number) { return s >= 8 ? 'high' : s >= 6 ? 'mid' : 'low'; }
