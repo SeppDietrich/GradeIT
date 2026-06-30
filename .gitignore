@@ -44,5 +44,5 @@ __screenshots__/
 Thumbs.db
 
 #enviorement variables
-/src/enviorements/enviorement.prod.ts
-/src/enviorements/enviorement.ts
+/src/environments/environment.ts
+/src/environments/environment.prod.ts
